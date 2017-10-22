@@ -27,3 +27,9 @@ This is a simple HTML/CSS/JS frontend mapping tool that interacts with NYC PLUTO
 
 ## A project by the DCP Business Improvement Division and NYC Planning Labs
 Project Profile coming soon at [planninglabs.nyc](https://planninglabs.nyc)
+
+
+## Dev notes
+
+https://carto.planninglabs.nyc/user/data/api/v2/sql?q=select%20*%20from%20support_mappluto%20limit%2010;
+&format=csv 

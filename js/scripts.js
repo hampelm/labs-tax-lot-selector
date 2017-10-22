@@ -3,31 +3,72 @@ const cartoOptions = {
   carto_user: 'data',
 };
 
-mapboxgl.accessToken = 'pk.eyJ1IjoiY3dob25nbnljIiwiYSI6ImNpczF1MXdrdjA4MXcycXA4ZGtyN2x5YXIifQ.3HGyME8tBs6BnljzUVIt4Q';
+mapboxgl.accessToken =
+  'pk.eyJ1IjoiY3dob25nbnljIiwiYSI6ImNpczF1MXdrdjA4MXcycXA4ZGtyN2x5YXIifQ.3HGyME8tBs6BnljzUVIt4Q';
 /* eslint-disable */
 const map = new mapboxgl.Map({
-    container: 'map', // container id
-    style: 'mapbox://styles/mapbox/light-v9', //hosted style id
-    center: [-73.98, 40.750768],
-    zoom: 16,
-    hash: true,
+  container: 'map', // container id
+  style: 'mapbox://styles/mapbox/light-v9', //hosted style id
+  center: [-73.98, 40.750768],
+  zoom: 16,
+  hash: true,
 });
 
+const select_fields =
+  'bbl, block, lot, address, builtfar,	residfar,	commfar,	facilfar, numfloors,	unitsres,	unitstotal, lotarea ';
+
 map.addControl(new mapboxgl.NavigationControl());
-map.addControl(new MapboxGeocoder({
+map.addControl(
+  new MapboxGeocoder({
     accessToken: mapboxgl.accessToken,
     bbox: [-74.292297, 40.477248, -73.618011, 40.958123],
-}), 'top-left');
+  }),
+  'top-left',
+);
 
 const selectedLots = {
   type: 'FeatureCollection',
   features: [],
 };
 
-const updateUI = (selectedLots) => {
+const calculateFAR = selectedLots => {
+  const totals = {
+    far: 0,
+    built: 0,
+    residential: 0,
+    available: 0,
+    resUnits: 0,
+    area: 0,
+  };
+
+  selectedLots.features.forEach(feature => {
+    const p = feature.properties;
+
+    totals.far += p.residfar + p.commfar;
+    totals.built += p.builtfar;
+    totals.residential += p.residfar;
+    totals.resUnits += p.unitsres;
+    totals.area += p.lotarea;
+  });
+
+  totals.available = totals.far - totals.built;
+
+  return totals;
+};
+
+const updateUI = selectedLots => {
+  console.log('Updating UI with', selectedLots);
 
   // update the underlying data for the selection layer
   map.getSource('selectedLots').setData(selectedLots);
+
+  const FAR = calculateFAR(selectedLots);
+  // Update our totals
+  $('#selected-units').text(FAR.resUnits.toString());
+  $('#selected-far').text(FAR.far.toString());
+  $('#selected-residential-far').text(FAR.residential.toString());
+  $('#selected-built-far').text(FAR.built.toString());
+  $('#selected-available-far').text(FAR.available.toString());
 
   // update the count in the sidebar
   const count = selectedLots.features.length;
@@ -38,10 +79,10 @@ const updateUI = (selectedLots) => {
   } else {
     $('a[id$="-button"]').addClass('disabled');
   }
-}
+};
 
-const updateSelectedLots = (features) => {
-  features.forEach((feature) => {
+const updateSelectedLots = features => {
+  features.forEach(feature => {
     const { type, geometry, properties } = feature;
 
     // if the lot is not in the selection, push it, if it is, remove it
@@ -54,14 +95,16 @@ const updateSelectedLots = (features) => {
         properties,
       });
     } else {
-      selectedLots.features = selectedLots.features.filter(lot => lot.properties.bbl !== properties.bbl);
+      selectedLots.features = selectedLots.features.filter(
+        lot => lot.properties.bbl !== properties.bbl,
+      );
     }
   });
 
   updateUI(selectedLots);
 };
 
-const getLotsInPolygon = (polygon) => {
+const getLotsInPolygon = polygon => {
   const SQL = `
     SELECT *
     FROM support_mappluto
@@ -74,35 +117,35 @@ const getLotsInPolygon = (polygon) => {
     )
   `;
 
-  Carto.sql(SQL, cartoOptions)
-    .then((d) => { updateSelectedLots(d.features); });
-}
+  Carto.sql(SQL, cartoOptions).then(d => {
+    updateSelectedLots(d.features);
+  });
+};
 
-const download = (type) => {
+const download = type => {
   // get an array of bbls to use in a query
   const selectedLotsArray = selectedLots.features.map(lot => lot.properties.bbl);
   const selectedLotsString = selectedLotsArray.join(',');
   console.log(selectedLotsString);
 
   const SQL = `
-    SELECT ${type === 'shp' ? 'the_geom,' : '' }borocode, block, lot, bbl, address
+    SELECT ${type === 'shp' ? 'the_geom,' : ''} ${select_fields}
     FROM support_mappluto
     WHERE bbl IN (${selectedLotsString})
   `;
 
   const apiCall = `https://${cartoOptions.carto_domain}/user/${cartoOptions.carto_user}/api/v2/sql?q=${SQL}&format=${type}&filename=selected_lots`;
-  console.log(apiCall)
+  console.log(apiCall);
 
   window.open(apiCall, 'Download');
-}
+};
 
 const clearSelection = () => {
   selectedLots.features = [];
   updateUI(selectedLots);
-}
+};
 
-map.on('load', function () {
-
+map.on('load', function() {
   // Create a popup, but don't add it to the map yet.
   var popup = new mapboxgl.Popup({
     closeButton: false,
@@ -113,75 +156,82 @@ map.on('load', function () {
 
   const mapConfig = {
     version: '1.3.0',
-    layers: [{
-      type: 'mapnik',
-      options: {
-        cartocss_version: '2.1.1',
-        cartocss: '#layer { polygon-fill: #FFF; }',
-        sql: 'SELECT cartodb_id, the_geom_webmercator, bbl, block, lot, address FROM support_mappluto',
+    layers: [
+      {
+        type: 'mapnik',
+        options: {
+          cartocss_version: '2.1.1',
+          cartocss: '#layer { polygon-fill: #FFF; }',
+          sql:
+            'SELECT cartodb_id, the_geom_webmercator, ' + select_fields + ' FROM support_mappluto',
+        },
       },
-    }],
-  }
+    ],
+  };
 
-  Carto.getVectorTileTemplate(mapConfig, cartoOptions).then((tileTemplate) => {
+  Carto.getVectorTileTemplate(mapConfig, cartoOptions).then(tileTemplate => {
     map.addSource('pluto', {
       type: 'vector',
       tiles: [tileTemplate],
     });
 
     map.addSource('selectedLots', {
-       type: 'geojson',
-       data: selectedLots
-     });
+      type: 'geojson',
+      data: selectedLots,
+    });
 
     map.addLayer(layerConfig.pluto, 'admin-2-boundaries-dispute');
     map.addLayer(layerConfig.plutoLabels);
     map.addLayer(layerConfig.selectedLots);
 
-
     // on click
-    map.on('click', (e) => {
+    map.on('click', e => {
       const features = map.queryRenderedFeatures(e.point, { layers: ['pluto'] });
       const uniqueFeatures = _.uniq(features, feature => feature.properties.bbl);
-      if(uniqueFeatures.length > 0) updateSelectedLots(uniqueFeatures);
+      if (uniqueFeatures.length > 0) updateSelectedLots(uniqueFeatures);
     });
 
-    map.on('mousemove', (e) => {
+    map.on('mousemove', e => {
       const features = map.queryRenderedFeatures(e.point, { layers: ['pluto'] });
 
       // show popup
       if (features && features.length > 0) {
-        const d = features[0].properties
-        popup.setLngLat(e.lngLat)
+        const d = features[0].properties;
+        popup
+          .setLngLat(e.lngLat)
           .setHTML(d.address)
           .addTo(map);
       } else {
         popup.remove();
       }
 
-      map.getCanvas().style.cursor = (features && features.length > 0) ? 'pointer' : '';
+      map.getCanvas().style.cursor = features && features.length > 0 ? 'pointer' : '';
     });
   });
 });
 
 const draw = new MapboxDraw({
-    displayControlsDefault: false,
-    controls: {
-        rectangle: true,
-        polygon: true,
-        trash: false,
-    },
-    styles: layerConfig.drawStyles,
+  displayControlsDefault: false,
+  controls: {
+    rectangle: true,
+    polygon: true,
+    trash: false,
+  },
+  styles: layerConfig.drawStyles,
 });
 
 map.addControl(draw);
 
-map.on('draw.create', (d) => {
+map.on('draw.create', d => {
   // remove the polygon, then pass its geometry on
   draw.deleteAll();
   getLotsInPolygon(d.features[0].geometry);
 });
 
-$('#csv-download-button').on('click', () => { download('csv'); });
-$('#shp-download-button').on('click', () => { download('shp'); });
+$('#csv-download-button').on('click', () => {
+  download('csv');
+});
+$('#shp-download-button').on('click', () => {
+  download('shp');
+});
 $('#clear-button').on('click', clearSelection);
